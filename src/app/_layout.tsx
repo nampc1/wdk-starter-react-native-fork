@@ -1,5 +1,5 @@
 import { DarkTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
-import { WalletProvider, WDKService } from '@tetherto/wdk-react-native-provider';
+import { WdkAppProvider, useWdkApp } from '@tetherto/wdk-react-native-core';
 import { ThemeProvider } from '@tetherto/wdk-uikit-react-native';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -8,9 +8,10 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
-import getChainsConfig from '@/config/get-chains-config';
 import { Toaster } from 'sonner-native';
 import { colors } from '@/constants/colors';
+import chainConfigs from '@/config/chain';
+import tokenConfigs from '@/config/token';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -24,36 +25,21 @@ const CustomDarkTheme = {
 };
 
 export default function RootLayout() {
-  useEffect(() => {
-    const initApp = async () => {
-      try {
-        await WDKService.initialize();
-      } catch (error) {
-        console.error('Failed to initialize services in app layout:', error);
-      } finally {
-        SplashScreen.hideAsync();
-      }
-    };
+  const { isInitializing } = useWdkApp();
 
-    initApp();
-  }, []);
+  useEffect(() => {
+    if (!isInitializing) {
+      SplashScreen.hideAsync();
+    }
+  }, [isInitializing]);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider
-        defaultMode="dark"
-        brandConfig={{
-          primaryColor: colors.primary,
-        }}
-      >
-        <WalletProvider
-          config={{
-            indexer: {
-              apiKey: process.env.EXPO_PUBLIC_WDK_INDEXER_API_KEY!,
-              url: process.env.EXPO_PUBLIC_WDK_INDEXER_BASE_URL!,
-            },
-            chains: getChainsConfig(),
-            enableCaching: true,
+    <WdkAppProvider networkConfigs={chainConfigs} tokenConfigs={tokenConfigs}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ThemeProvider
+          defaultMode="dark"
+          brandConfig={{
+            primaryColor: colors.primary,
           }}
         >
           <NavigationThemeProvider value={CustomDarkTheme}>
@@ -67,20 +53,20 @@ export default function RootLayout() {
               <StatusBar style="light" />
             </View>
           </NavigationThemeProvider>
-        </WalletProvider>
-        <Toaster
-          offset={90}
-          toastOptions={{
-            style: {
-              backgroundColor: colors.background,
-              borderWidth: 1,
-              borderColor: colors.border,
-            },
-            titleStyle: { color: colors.text },
-            descriptionStyle: { color: colors.text },
-          }}
-        />
-      </ThemeProvider>
-    </GestureHandlerRootView>
+          <Toaster
+            offset={90}
+            toastOptions={{
+              style: {
+                backgroundColor: colors.background,
+                borderWidth: 1,
+                borderColor: colors.border,
+              },
+              titleStyle: { color: colors.text },
+              descriptionStyle: { color: colors.text },
+            }}
+          />
+        </ThemeProvider>
+      </GestureHandlerRootView>
+    </WdkAppProvider>
   );
 }

@@ -1,51 +1,37 @@
-import { useWallet } from '@tetherto/wdk-react-native-provider';
-import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
+import { useWalletManager } from '@tetherto/wdk-react-native-core';
+import { useRouter } from 'expo-router';
 import { Fingerprint, Shield } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import parseWorkletError from '@/utils/parse-worklet-error';
 import { colors } from '@/constants/colors';
-import getErrorMessage from '@/utils/get-error-message';
 
 export default function AuthorizeScreen() {
   const insets = useSafeAreaInsets();
-  const router = useDebouncedNavigation();
-  const { wallet, unlockWallet } = useWallet();
-  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+
+  // New Core Hook
+  const { initializeWallet, isInitializing, error: initError } = useWalletManager();
+
+  // Local state for UI feedback
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    handleAuthorize();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Attempt auto-login on mount (optional, might be annoying if it fails immediately)
+    // handleAuthorize();
   }, []);
 
   const handleAuthorize = async () => {
-    if (!wallet) {
-      Alert.alert('Error', 'No wallet found');
-      router.replace('/onboarding');
-      return;
-    }
-
-    setIsLoading(true);
     setError(null);
 
     try {
-      const isDone = await unlockWallet();
-      if (isDone) {
-        router.replace('/wallet');
-      }
-    } catch (error) {
-      console.error('Failed to unlock wallet:', error);
-      setError(getErrorMessage(error, 'Failed to unlock wallet'));
-      return;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      await initializeWallet({ createNew: false });
 
-  const handleBiometricAuth = async () => {
-    handleAuthorize();
+      router.replace('/wallet');
+    } catch (err: any) {
+      console.error('Failed to unlock wallet:', err);
+      setError(err.message || 'Failed to unlock wallet');
+    }
   };
 
   return (
@@ -58,27 +44,25 @@ export default function AuthorizeScreen() {
         <Text style={styles.title}>Authorize Access</Text>
         <Text style={styles.subtitle}>Verify your identity to access your wallet</Text>
 
-        {isLoading ? (
+        {isInitializing ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Initializing wallet...</Text>
+            <Text style={styles.loadingText}>Unlocking wallet...</Text>
           </View>
         ) : (
-          <>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={handleBiometricAuth}
-              disabled={isLoading}
-            >
-              <Fingerprint size={24} color={colors.white} />
-              <Text style={styles.primaryButtonText}>Use Biometric</Text>
-            </TouchableOpacity>
-          </>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleAuthorize}
+            disabled={isInitializing}
+          >
+            <Fingerprint size={24} color={colors.white} />
+            <Text style={styles.primaryButtonText}>Use Biometric</Text>
+          </TouchableOpacity>
         )}
 
-        {error && (
+        {(error || initError) && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>{error || initError}</Text>
           </View>
         )}
       </View>
