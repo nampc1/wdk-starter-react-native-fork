@@ -2,7 +2,6 @@ import { networkConfigs } from '@/config/networks';
 import formatAmount from '@/utils/format-amount';
 import formatTokenAmount from '@/utils/format-token-amount';
 import formatUSDValue from '@/utils/format-usd-value';
-import { AssetTicker, NetworkType } from '@tetherto/wdk-react-native-provider';
 import { Send } from 'lucide-react-native';
 import React from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -12,7 +11,7 @@ interface TokenNetworkBalance {
   network: string;
   balance: number;
   usdValue: number;
-  address: string;
+  address: string | null | undefined;
 }
 
 interface TokenData {
@@ -28,33 +27,32 @@ interface TokenData {
 
 interface TokenDetailsProps {
   tokenData: TokenData;
-  onSendPress?: (network?: NetworkType) => void;
+  onSendPress?: (network?: string) => void;
 }
 
 export function TokenDetails({ tokenData, onSendPress }: TokenDetailsProps) {
-  const handleSend = (network?: NetworkType) => {
+  const handleSend = (network?: string) => {
     if (onSendPress) {
       onSendPress(network);
     } else {
-      const networkName = network ? networkConfigs[network].name || network : 'any network';
+      const networkName = network ? networkConfigs[network]?.name || network : 'any network';
       Alert.alert('Send Token', `Send ${tokenData.symbol} on ${networkName}`);
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* Total Token Balance */}
       <View style={styles.totalBalanceCard}>
         <View style={[styles.tokenIcon, { backgroundColor: tokenData.color }]}>
-          {typeof tokenData.icon === 'string' ? (
-            <Text style={styles.tokenIconText}>{tokenData.icon}</Text>
+          {typeof tokenData.icon === 'string' || !tokenData.icon ? (
+            <Text style={styles.tokenIconText}>{tokenData.symbol[0]}</Text>
           ) : (
             <Image source={tokenData.icon} style={styles.tokenIconImage} />
           )}
         </View>
         <Text style={styles.totalLabel}>Total {tokenData.name} Balance</Text>
         <Text style={styles.totalAmount}>
-          {formatTokenAmount(tokenData.totalBalance, tokenData.symbol as AssetTicker)}
+          {formatTokenAmount(tokenData.totalBalance, tokenData.symbol as any)}
         </Text>
         <Text style={styles.totalValue}>{formatUSDValue(tokenData.totalUSDValue)}</Text>
         {tokenData.priceUSD > 0 && (
@@ -64,23 +62,31 @@ export function TokenDetails({ tokenData, onSendPress }: TokenDetailsProps) {
         )}
       </View>
 
-      {/* Network Breakdown */}
       {tokenData.networkBalances.length > 0 ? (
         <>
           <Text style={styles.sectionTitle}>Available on Networks</Text>
           <ScrollView style={styles.networkList} showsVerticalScrollIndicator={false}>
             {tokenData.networkBalances.map((item, index) => {
-              const networkName = networkConfigs[item.network as NetworkType]?.name || item.network;
-              const networkColor = networkConfigs[item.network as NetworkType]?.color || '#999';
+              const networkName = networkConfigs[item.network]?.name || item.network;
+              const networkColor = networkConfigs[item.network]?.color || '#999';
+              const networkIcon = networkConfigs[item.network]?.icon;
 
               return (
                 <View key={`${item.network}-${index}`} style={styles.networkRow}>
                   <View style={styles.networkInfo}>
                     <View style={[styles.networkIcon, { backgroundColor: networkColor }]}>
-                      <Image
-                        source={networkConfigs[item.network as NetworkType]?.icon}
-                        style={styles.tokenIconImage}
-                      />
+                      {networkIcon ? (
+                        <Image source={networkIcon} style={styles.tokenIconImage} />
+                      ) : (
+                        <View
+                          style={{
+                            width: 16,
+                            height: 16,
+                            backgroundColor: 'white',
+                            borderRadius: 8,
+                          }}
+                        />
+                      )}
                     </View>
                     <View style={styles.networkDetails}>
                       <Text style={styles.networkName}>{networkName}</Text>
@@ -94,7 +100,7 @@ export function TokenDetails({ tokenData, onSendPress }: TokenDetailsProps) {
 
                   <View style={styles.networkBalance}>
                     <Text style={styles.networkAmount}>
-                      {formatTokenAmount(item.balance, tokenData.symbol as AssetTicker)}
+                      {formatTokenAmount(item.balance, tokenData.symbol as any)}
                     </Text>
                     <Text style={styles.networkValue}>{formatUSDValue(item.usdValue)}</Text>
                   </View>
@@ -102,7 +108,7 @@ export function TokenDetails({ tokenData, onSendPress }: TokenDetailsProps) {
                   {item.balance > 0 && (
                     <TouchableOpacity
                       style={styles.sendButton}
-                      onPress={() => handleSend(item.network as NetworkType)}
+                      onPress={() => handleSend(item.network)}
                     >
                       <Send size={16} color="#FF6501" />
                     </TouchableOpacity>
@@ -247,53 +253,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textSecondary,
     textAlign: 'center',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: colors.black,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: colors.tintedBackground,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  secondaryButtonText: {
-    color: colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  sendAllButton: {
-    backgroundColor: '#26A17B',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  sendAllButtonText: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
   },
 });
