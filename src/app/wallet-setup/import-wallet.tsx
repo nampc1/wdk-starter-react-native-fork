@@ -68,14 +68,14 @@ export default function ImportWalletScreen() {
   };
 
   const isFormValid = () => {
-    return secretWords.every(word => word.trim().length > 0);
+    return secretWords.every((word) => word.trim().length > 0);
   };
 
   const validateSeedPhrase = (phrase: string): boolean => {
     const words = phrase
       .trim()
       .split(' ')
-      .filter(word => word.length > 0);
+      .filter((word) => word.length > 0);
 
     // Check if we have exactly 12 or 24 words
     if (words.length !== 12 && words.length !== 24) {
@@ -84,7 +84,7 @@ export default function ImportWalletScreen() {
 
     // Basic word validation - each word should be at least 3 characters
     const validWords = words.every(
-      word => word.length >= 3 && /^[a-z]+$/.test(word) // only lowercase letters
+      (word) => word.length >= 3 && /^[a-z]+$/.test(word) // only lowercase letters
     );
 
     return validWords;
