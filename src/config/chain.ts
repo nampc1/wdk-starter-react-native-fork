@@ -1,4 +1,6 @@
-const chainConfigs = {
+import { NetworkConfigs } from '@tetherto/wdk-react-native-core';
+
+const chainConfigs: NetworkConfigs = {
   ethereum: {
     chainId: 1, // Sepolia
     blockchain: 'ethereum',

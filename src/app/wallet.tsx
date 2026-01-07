@@ -1,5 +1,6 @@
 import { BalanceLoader } from '@/components/BalanceLoader';
-import { AssetTicker, useWallet } from '@tetherto/wdk-react-native-provider';
+import { useAggregatedBalances } from '@/hooks/use-aggregated-balances';
+import { useWdkApp } from '@tetherto/wdk-react-native-core';
 import { Balance } from '@tetherto/wdk-uikit-react-native';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
 import {
@@ -10,6 +11,7 @@ import {
   Settings,
   Shield,
   Star,
+  Wallet,
 } from 'lucide-react-native';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -25,108 +27,42 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AssetConfig, assetConfig } from '../config/assets';
-import { FiatCurrency, pricingService } from '../services/pricing-service';
+import { assetConfig } from '../config/assets';
 import formatAmount from '@/utils/format-amount';
 import formatTokenAmount from '@/utils/format-token-amount';
-import formatUSDValue from '@/utils/format-usd-value';
-import useWalletAvatar from '@/hooks/use-wallet-avatar';
 import { colors } from '@/constants/colors';
-
-type AggregatedBalance = ({
-  denomination: string;
-  balance: number;
-  usdValue: number;
-  config: AssetConfig;
-} | null)[];
-
-type Transaction = {
-  id: number;
-  type: string;
-  asset: string;
-  token: string;
-  amount: string;
-  icon: any;
-  iconColor: string;
-  blockchain: string;
-  hash: string;
-  fiatAmount: number;
-  currency: FiatCurrency;
-};
 
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const router = useDebouncedNavigation();
-  const {
-    wallet,
-    isLoading,
-    isUnlocked,
-    refreshWalletBalance,
-    balances,
-    addresses,
-    transactions: walletTransactions,
-  } = useWallet();
+
+  const { activeWalletId } = useWdkApp();
+  const { assets, totalBalanceUSD, isLoading, refetch } = useAggregatedBalances();
+
   const [refreshing, setRefreshing] = useState(false);
-  const [aggregatedBalances, setAggregatedBalances] = useState<AggregatedBalance>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [mounted, setMounted] = useState(false);
-  const avatar = useWalletAvatar();
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const hasWallet = !!wallet;
-
-  // Redirect to authorization if wallet is not unlocked
-  useEffect(() => {
-    if (hasWallet && !isUnlocked) {
-      router.replace('/authorize');
-    }
-  }, [hasWallet, isUnlocked, router]);
-
-  // Calculate aggregated balances by denomination
-  const getAggregatedBalances = async () => {
-    if (!balances) return [];
-
-    const map = new Map<string, { totalBalance: number }>();
-
-    // Sum up balances by denomination across all networks
-    balances.list.forEach(balance => {
-      const current = map.get(balance.denomination) || { totalBalance: 0 };
-      map.set(balance.denomination, {
-        totalBalance: current.totalBalance + parseFloat(balance.value),
-      });
-    });
-
-    const promises = Array.from(map.entries()).map(async ([denomination, { totalBalance }]) => {
-      const config = assetConfig[denomination];
-      if (!config) return null;
-
-      // Calculate fiat value using pricing service
-      const fiatValue = await pricingService.getFiatValue(
-        totalBalance,
-        denomination as AssetTicker,
-        FiatCurrency.USD
-      );
+  // Transform new hook data to old UI shape to minimize JSX changes
+  const aggregatedBalances = useMemo(() => {
+    return assets.map((asset) => {
+      // Try to find config in existing assetConfig, or fallback
+      const config = assetConfig[asset.symbol] || {
+        name: asset.name,
+        color: colors.primary,
+        icon: null, // Fallback
+      };
 
       return {
-        denomination,
-        balance: totalBalance,
-        usdValue: fiatValue,
-        config,
+        denomination: asset.symbol,
+        balance: asset.totalBalance,
+        usdValue: 0, // Placeholder until pricing is hooked up
+        config: config,
       };
     });
+  }, [assets]);
 
-    return (await Promise.all(promises))
-      .filter(Boolean)
-      .filter(asset => asset && asset.balance > 0) // Only show tokens with positive balance
-      .sort((a, b) => (b?.usdValue || 0) - (a?.usdValue || 0)); // Sort by USD value descending
-  };
-
-  // Calculate total portfolio value
-  const totalPortfolioValue = useMemo(() => {
-    return aggregatedBalances.reduce((sum, asset) => sum + (asset?.usdValue || 0), 0);
-  }, [aggregatedBalances]);
-
-  // Animated border opacity based on scroll position
+  // Animated border opacity
   const borderOpacity = scrollY.interpolate({
     inputRange: [0, 50],
     outputRange: [0, 1],
@@ -157,112 +93,26 @@ export default function WalletScreen() {
     },
   ];
 
-  // Get real transactions from wallet data
-  const getTransactions = async () => {
-    if (!walletTransactions) return [];
-
-    // Get the wallet's own addresses for comparison
-    const walletAddresses = addresses
-      ? Object.values(addresses).map(addr => addr?.toLowerCase())
-      : [];
-
-    const result = await Promise.all(
-      walletTransactions.list
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 3)
-        .map(async (tx, index) => {
-          const fromAddress = tx.from?.toLowerCase();
-          const isSent = walletAddresses.includes(fromAddress);
-          const amount = parseFloat(tx.amount);
-          const config = assetConfig[tx.token];
-
-          // Calculate fiat amount using pricing service
-          const fiatAmount = await pricingService.getFiatValue(
-            amount,
-            tx.token as AssetTicker,
-            FiatCurrency.USD
-          );
-
-          return {
-            id: index + 1,
-            type: isSent ? 'sent' : 'received',
-            asset: config?.name || tx.token.toUpperCase(),
-            token: tx.token,
-            amount: `${formatTokenAmount(amount, tx.token as AssetTicker)}`,
-            icon: isSent ? ArrowUpRight : ArrowDownLeft,
-            iconColor: isSent ? colors.danger : colors.success,
-            blockchain: tx.blockchain,
-            hash: tx.transactionHash,
-            fiatAmount: fiatAmount,
-            currency: FiatCurrency.USD,
-          };
-        })
-    );
-
-    return result;
-  };
-
-  const handleSendPress = () => {
-    router.push('/send/select-token');
-  };
-
-  const handleReceivePress = () => {
-    router.push('/receive/select-token');
-  };
-
-  const handleQRPress = () => {
-    router.push('/scan-qr');
-  };
-
-  const handleSeeAllTokens = () => {
-    router.push('/assets');
-  };
-
-  const handleSeeAllActivity = () => {
-    router.push('/activity');
-  };
-
-  const handleCreateWallet = () => {
-    router.push('/wallet-setup/name-wallet');
-  };
-
-  const handleSettingsPress = () => {
-    router.push('/settings');
-  };
+  // Handlers
+  const handleSendPress = () => router.push('/send/select-token');
+  const handleReceivePress = () => router.push('/receive/select-token');
+  const handleQRPress = () => router.push('/scan-qr');
+  const handleSeeAllTokens = () => router.push('/assets');
+  const handleSeeAllActivity = () => router.push('/activity');
+  const handleSettingsPress = () => router.push('/settings');
 
   const handleRefresh = async () => {
-    if (!wallet) return;
-
     setRefreshing(true);
-    try {
-      await refreshWalletBalance();
-    } catch (error) {
-      console.error('Failed to refresh wallet data:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    await refetch();
+    setRefreshing(false);
   };
 
   useEffect(() => {
-    getAggregatedBalances().then(setAggregatedBalances);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balances]);
-
-  useEffect(() => {
-    getTransactions().then(setTransactions);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [walletTransactions?.list, addresses]);
-
-  // Force component to fully mount before enabling RefreshControl on iOS
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      setMounted(true);
-    });
+    requestAnimationFrame(() => setMounted(true));
   }, []);
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <Animated.View
         style={[
           styles.header,
@@ -277,9 +127,9 @@ export default function WalletScreen() {
       >
         <View style={styles.walletInfo}>
           <View style={styles.walletIcon}>
-            <Text style={styles.walletIconText}>{avatar}</Text>
+            <Wallet size={16} color={colors.background} />
           </View>
-          <Text style={styles.walletName}>{wallet?.name || 'No Wallet'}</Text>
+          <Text style={styles.walletName}>{activeWalletId || 'My Wallet'}</Text>
         </View>
 
         <View style={styles.headerActions}>
@@ -309,84 +159,65 @@ export default function WalletScreen() {
               titleColor={colors.textSecondary}
               progressViewOffset={insets.top}
             />
-          ) : (
-            <RefreshControl
-              refreshing={false}
-              onRefresh={() => {}}
-              tintColor={colors.white}
-              colors={[colors.white]}
-              progressViewOffset={0}
-            />
-          )
+          ) : undefined
         }
       >
-        {/* Balance */}
-        {!hasWallet && !isLoading ? (
-          <TouchableOpacity onPress={handleCreateWallet}>
-            <Text>Create Your First Wallet</Text>
-          </TouchableOpacity>
-        ) : (
-          <View
-            style={{
-              margin: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <Balance
-              value={totalPortfolioValue}
-              currency="USD"
-              isLoading={isLoading}
-              Loader={BalanceLoader}
-            />
-            {balances.isLoading ? (
-              <View style={{ top: 16, marginRight: 8 }}>
-                <ActivityIndicator size="small" color={colors.primary} />
-              </View>
-            ) : null}
-          </View>
-        )}
+        <View
+          style={{
+            margin: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Balance
+            value={totalBalanceUSD}
+            currency="USD"
+            isLoading={isLoading}
+            Loader={BalanceLoader}
+          />
+          {isLoading ? (
+            <View style={{ top: 16, marginRight: 8 }}>
+              <ActivityIndicator size="small" color={colors.primary} />
+            </View>
+          ) : null}
+        </View>
 
-        {/* Portfolio */}
         <View style={styles.portfolioSection}>
           {aggregatedBalances.length > 0 ? (
-            aggregatedBalances.map(asset => {
-              if (!asset) return null;
-
-              return (
-                <TouchableOpacity
-                  key={asset.denomination}
-                  style={styles.assetRow}
-                  onPress={() => {
-                    if (wallet) {
-                      router.push({
-                        pathname: '/token-details',
-                        params: {
-                          walletId: wallet.id,
-                          token: asset.denomination.toUpperCase(),
-                        },
-                      });
-                    }
-                  }}
-                >
-                  <View style={styles.assetInfo}>
-                    <View style={[styles.assetIcon, { backgroundColor: asset.config.color }]}>
+            aggregatedBalances.map((asset) => (
+              <TouchableOpacity
+                key={asset.denomination}
+                style={styles.assetRow}
+                onPress={() => {
+                  router.push({
+                    pathname: '/token-details',
+                    params: { token: asset.denomination },
+                  });
+                }}
+              >
+                <View style={styles.assetInfo}>
+                  <View style={[styles.assetIcon, { backgroundColor: asset.config?.color }]}>
+                    {asset.config?.icon ? (
                       <Image source={asset.config.icon} style={styles.assetIconImage} />
-                    </View>
-                    <View>
-                      <Text style={styles.assetName}>{asset.config.name}</Text>
-                    </View>
+                    ) : (
+                      <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                        {asset.denomination[0]}
+                      </Text>
+                    )}
                   </View>
-                  <View style={styles.assetBalance}>
-                    <Text style={styles.assetAmount}>
-                      {formatTokenAmount(asset.balance, asset.denomination as AssetTicker)}
-                    </Text>
-                    <Text style={styles.assetValue}>{formatAmount(asset.usdValue)} USD</Text>
+                  <View>
+                    <Text style={styles.assetName}>{asset.config?.name || asset.denomination}</Text>
                   </View>
-                </TouchableOpacity>
-              );
-            })
+                </View>
+                <View style={styles.assetBalance}>
+                  <Text style={styles.assetAmount}>
+                    {formatTokenAmount(asset.balance, asset.denomination as any)}
+                  </Text>
+                  <Text style={styles.assetValue}>{formatAmount(asset.usdValue)} USD</Text>
+                </View>
+              </TouchableOpacity>
+            ))
           ) : (
             <View style={styles.noAssetsContainer}>
               <Text style={styles.noAssetsText}>No assets found</Text>
@@ -398,18 +229,14 @@ export default function WalletScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Suggestions */}
         <View style={styles.suggestionsSection}>
           <View style={styles.suggestionsHeader}>
             <Text style={styles.sectionTitle}>Suggestions</Text>
           </View>
-
           <View style={styles.suggestionsGrid}>
-            {suggestions.map(suggestion => (
+            {suggestions.map((suggestion) => (
               <TouchableOpacity
-                onPress={() => {
-                  Linking.openURL(suggestion.url);
-                }}
+                onPress={() => Linking.openURL(suggestion.url)}
                 key={suggestion.id}
                 style={styles.suggestionCard}
               >
@@ -420,50 +247,39 @@ export default function WalletScreen() {
           </View>
         </View>
 
-        {/* Activity */}
         <View style={styles.activitySection}>
           <View
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
             <Text style={styles.sectionTitle}>Activity</Text>
-            {walletTransactions.isLoading ? (
-              <View style={{ marginRight: 8 }}>
-                <ActivityIndicator size="small" color={colors.primary} />
-              </View>
-            ) : null}
           </View>
-
-          {transactions.length > 0 ? (
-            transactions.map(tx => (
-              <View key={tx.id} style={styles.transactionRow}>
-                <View style={styles.transactionIcon}>
-                  <tx.icon size={16} color={tx.iconColor} />
-                </View>
-                <View style={styles.transactionInfo}>
-                  <Text style={styles.transactionType}>{tx.asset}</Text>
-                  <Text style={styles.transactionSubtitle}>
-                    {tx.type === 'sent' ? 'Sent' : 'Received'} • {tx.blockchain}
-                  </Text>
-                </View>
-                <View style={styles.transactionAmount}>
-                  <Text style={styles.transactionAssetAmount}>{tx.amount}</Text>
-                  <Text style={styles.transactionUsdAmount}>{formatUSDValue(tx.fiatAmount)}</Text>
-                </View>
+          {/* todo */}
+          {/*transactions.map(tx => (
+            <View key={tx.id} style={styles.transactionRow}>
+              <View style={styles.transactionIcon}>
+                <tx.icon size={16} color={tx.iconColor} />
               </View>
-            ))
-          ) : (
-            <View style={styles.noAssetsContainer}>
-              <Text style={styles.noAssetsText}>No transactions yet</Text>
+              <View style={styles.transactionInfo}>
+                <Text style={styles.transactionType}>{tx.asset}</Text>
+                <Text style={styles.transactionSubtitle}>
+                  {tx.type === 'sent' ? 'Sent' : 'Received'} • {tx.blockchain}
+                </Text>
+              </View>
+              <View style={styles.transactionAmount}>
+                <Text style={styles.transactionAssetAmount}>{tx.amount}</Text>
+                <Text style={styles.transactionUsdAmount}>{formatUSDValue(tx.fiatAmount)}</Text>
+              </View>
             </View>
-          )}
-
+          ))*/}
+          <View style={styles.noAssetsContainer}>
+            <Text style={styles.noAssetsText}>No transactions yet</Text>
+          </View>
           <TouchableOpacity onPress={handleSeeAllActivity}>
             <Text style={styles.seeAllText}>See All</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* Bottom Actions */}
       <View style={[styles.bottomActions, { marginBottom: insets.bottom }]}>
         <TouchableOpacity style={styles.actionButton} onPress={handleSendPress}>
           <ArrowUpRight size={20} color={colors.white} />
@@ -484,17 +300,9 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 120,
-    flexGrow: 1,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingBottom: 120, flexGrow: 1 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -504,12 +312,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     borderBottomWidth: 1,
   },
-  walletInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
+  walletInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 },
   walletIcon: {
     width: 24,
     height: 24,
@@ -519,26 +322,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
-  walletIconText: {
-    fontSize: 12,
-  },
-  walletName: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
-    flex: 1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settingsButton: {
-    padding: 8,
-  },
-  portfolioSection: {
-    paddingHorizontal: 20,
-    marginBottom: 32,
-  },
+  walletIconText: { fontSize: 12 },
+  walletName: { color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  settingsButton: { padding: 8 },
+  portfolioSection: { paddingHorizontal: 20, marginBottom: 32 },
   assetRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -549,10 +337,7 @@ const styles = StyleSheet.create({
     paddingLeft: 16,
     marginBottom: 16,
   },
-  assetInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  assetInfo: { flexDirection: 'row', alignItems: 'center' },
   assetIcon: {
     width: 40,
     height: 40,
@@ -561,61 +346,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  assetIconImage: {
-    width: 24,
-    height: 24,
-  },
-  assetName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  assetBalance: {
-    alignItems: 'flex-end',
-  },
-  noAssetsContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  noAssetsText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  assetAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  assetValue: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  seeAllText: {
-    fontSize: 16,
-    color: colors.primary,
-    textAlign: 'center',
-  },
-  suggestionsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 32,
-  },
+  assetIconImage: { width: 24, height: 24 },
+  assetName: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 2 },
+  assetBalance: { alignItems: 'flex-end' },
+  noAssetsContainer: { alignItems: 'center', paddingVertical: 40 },
+  noAssetsText: { fontSize: 16, color: colors.textSecondary },
+  assetAmount: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 2 },
+  assetValue: { fontSize: 14, color: colors.textSecondary },
+  seeAllText: { fontSize: 16, color: colors.primary, textAlign: 'center' },
+  suggestionsSection: { paddingHorizontal: 20, marginBottom: 32 },
   suggestionsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  suggestionsGrid: {
-    flexDirection: 'row',
-    marginHorizontal: -6,
-  },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  suggestionsGrid: { flexDirection: 'row', marginHorizontal: -6 },
   suggestionCard: {
     flex: 1,
     backgroundColor: colors.card,
@@ -632,10 +379,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 16,
   },
-  activitySection: {
-    paddingHorizontal: 20,
-    marginBottom: 32,
-  },
+  activitySection: { paddingHorizontal: 20, marginBottom: 32 },
   transactionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -651,32 +395,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionType: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  transactionSubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  transactionAmount: {
-    alignItems: 'flex-end',
-  },
-  transactionAssetAmount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  transactionUsdAmount: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
+  transactionInfo: { flex: 1 },
+  transactionType: { fontSize: 16, fontWeight: '500', color: colors.text, marginBottom: 2 },
+  transactionSubtitle: { fontSize: 14, color: colors.textSecondary },
+  transactionAmount: { alignItems: 'flex-end' },
+  transactionAssetAmount: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 2 },
+  transactionUsdAmount: { fontSize: 14, color: colors.textSecondary },
   bottomActions: {
     position: 'absolute',
     bottom: 20,
@@ -690,25 +414,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
     height: 80,
   },
-  actionButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  actionButtonText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
+  actionButton: { flex: 1, alignItems: 'center', paddingVertical: 12 },
+  actionButtonText: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
   qrButton: {
     width: 48,
     height: 48,

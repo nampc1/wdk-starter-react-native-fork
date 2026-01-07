@@ -1,5 +1,5 @@
 import { CommonActions, useNavigation } from '@react-navigation/native';
-import { useWallet } from '@tetherto/wdk-react-native-provider';
+import { useWalletManager } from '@tetherto/wdk-react-native-core';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -10,7 +10,9 @@ export default function CompleteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ walletName: string; mnemonic: string }>();
-  const { createWallet, isLoading } = useWallet();
+
+  const { initializeFromMnemonic, isInitializing } = useWalletManager();
+
   const [walletCreated, setWalletCreated] = useState(false);
 
   useEffect(() => {
@@ -24,20 +26,18 @@ export default function CompleteScreen() {
 
     try {
       const walletName = params.walletName || 'My Wallet';
-      const mnemonic = params.mnemonic.split(',').join(' ');
+      const mnemonic = params.mnemonic?.split(',').join(' ');
 
-      // Use the wallet context to create the wallet
-      await createWallet({
-        name: walletName,
-        mnemonic,
-      });
+      if (!mnemonic) throw new Error('Invalid mnemonic provided');
+
+      await initializeFromMnemonic(mnemonic, walletName);
 
       setWalletCreated(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create wallet:', error);
       Alert.alert(
         'Wallet Creation Failed',
-        'There was an issue creating your wallet. Please try again.',
+        error.message || 'There was an issue creating your wallet. Please try again.',
         [{ text: 'Retry', onPress: () => createWalletWithWDK() }]
       );
     }
@@ -48,7 +48,7 @@ export default function CompleteScreen() {
       Alert.alert('Please Wait', 'Wallet is still being created...');
       return;
     }
-    // Reset navigation stack completely - only wallet screen will remain
+
     navigation.dispatch(
       CommonActions.reset({
         index: 0,
@@ -57,7 +57,7 @@ export default function CompleteScreen() {
     );
   };
 
-  const generalLoadingStatus = !walletCreated || isLoading;
+  const generalLoadingStatus = !walletCreated || isInitializing;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

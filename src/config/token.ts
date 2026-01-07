@@ -1,4 +1,6 @@
-const tokenConfigs = {
+import { NetworkTokens } from '@tetherto/wdk-react-native-core';
+
+const tokenConfigs: Record<string, NetworkTokens> = {
   ethereum: {
     native: {
       address: null,

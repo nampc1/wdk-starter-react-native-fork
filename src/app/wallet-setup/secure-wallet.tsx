@@ -1,56 +1,54 @@
 import { SeedPhrase } from '@/components/SeedPhrase';
-import { WDKService } from '@tetherto/wdk-react-native-provider';
+import { useWorklet } from '@tetherto/wdk-react-native-core';
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams } from 'expo-router';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
 import { AlertCircle, ChevronLeft, Copy, Eye, EyeOff } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { getUniqueId } from 'react-native-device-info';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import parseWorkletError from '@/utils/parse-worklet-error';
 import { toast } from 'sonner-native';
 import { colors } from '@/constants/colors';
-import getErrorMessage from '@/utils/get-error-message';
 
 export default function SecureWalletScreen() {
   const router = useDebouncedNavigation();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     walletName?: string;
-    avatar?: string;
   }>();
+
+  const { generateEntropyAndEncrypt, getMnemonicFromEntropy } = useWorklet(); // todo
+
   const [mnemonic, setMnemonic] = useState<string[]>([]);
   const [showPhrase, setShowPhrase] = useState(true);
   const [isGenerating, setIsGenerating] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Generate mnemonic using WDK on mount
     generateMnemonic();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const generateMnemonic = async () => {
     try {
       setIsGenerating(true);
       setError(null);
-      const prf = await getUniqueId();
-      const mnemonicString = await WDKService.createSeed({ prf });
 
-      if (!mnemonicString) {
-        throw new Error('Received empty mnemonic');
+      const { encryptedEntropyBuffer, encryptionKey } = await generateEntropyAndEncrypt(12);
+
+      const { mnemonic: phrase } = await getMnemonicFromEntropy(
+        encryptedEntropyBuffer,
+        encryptionKey
+      );
+
+      if (!phrase) {
+        throw new Error('Failed to generate mnemonic');
       }
 
-      const words = mnemonicString.split(' ');
-      if (words.length !== 12) {
-        throw new Error(`Invalid mnemonic length: expected 12 words, got ${words.length}`);
-      }
-
-      setMnemonic(words);
-    } catch (error) {
-      console.error('Failed to generate seed phrase', error);
-      setError(getErrorMessage(error, 'Failed to generate seed phrase. Please try again.'));
-      setMnemonic([]);
+      setMnemonic(phrase.split(' '));
+    } catch (err: any) {
+      console.error('Failed to generate seed phrase', err);
+      setError('Failed to generate secure seed phrase. ' + (err.message || ''));
     } finally {
       setIsGenerating(false);
     }
@@ -67,13 +65,11 @@ export default function SecureWalletScreen() {
   };
 
   const handleNext = () => {
-    // Pass wallet data to next screen
     router.push({
-      pathname: './confirm-phrase',
+      pathname: '/wallet-setup/confirm-phrase',
       params: {
         mnemonic: mnemonic.join(','),
         walletName: params.walletName,
-        avatar: params.avatar,
       },
     });
   };
@@ -183,10 +179,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 16,
     marginLeft: 4,
-  },
-  skipText: {
-    color: colors.primary,
-    fontSize: 16,
   },
   content: {
     flex: 1,
