@@ -1,92 +1,88 @@
-import { FiatCurrency, pricingService } from '@/services/pricing-service';
-import { AssetTicker, useWallet } from '@tetherto/wdk-react-native-provider';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
 import React, { useEffect, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Asset, assetConfig } from '../config/assets';
+import { tokenUiConfigs } from '@/config/token';
 import formatAmount from '@/utils/format-amount';
-import getDisplaySymbol from '@/utils/get-display-symbol';
 import formatTokenAmount from '@/utils/format-token-amount';
 import Header from '@/components/header';
 import { colors } from '@/constants/colors';
+import { useAggregatedBalances } from '@/hooks/use-aggregated-balances';
+import { useWdkApp } from '@tetherto/wdk-react-native-core';
+
+interface Asset {
+  id: string;
+  name: string;
+  symbol: string;
+  amount: string;
+  fiatValue: number;
+  fiatCurrency: string;
+  icon: any;
+  color: string;
+}
 
 export default function AssetsScreen() {
   const insets = useSafeAreaInsets();
   const router = useDebouncedNavigation();
-  const { wallet, balances } = useWallet();
+  const { activeWalletId } = useWdkApp();
+  const { assets: aggregatedAssets, isLoading } = useAggregatedBalances();
   const [assets, setAssets] = useState<Asset[]>([]);
 
-  // Calculate aggregated balances by denomination from real wallet data
-  const getAssetsWithFiatValue = async () => {
-    if (!balances.list) return [];
+  useEffect(() => {
+    const calculateAssets = async () => {
+      // Mock pricing
+      const prices: Record<string, number> = {
+        BTC: 95000,
+        USDT: 1,
+        XAUT: 2450,
+        ETH: 3500,
+        USAT: 1,
+      };
 
-    const balanceMap = new Map<string, { totalBalance: number }>();
+      const mappedAssets: Asset[] = aggregatedAssets.map((aggAsset) => {
+        const uiConfig = tokenUiConfigs[aggAsset.symbol] || {
+          icon: null,
+          color: colors.primary,
+        };
 
-    // Sum up balances by denomination across all networks
-    balances.list.forEach(balance => {
-      const current = balanceMap.get(balance.denomination) || { totalBalance: 0 };
-      balanceMap.set(balance.denomination, {
-        totalBalance: current.totalBalance + parseFloat(balance.value),
-      });
-    });
-
-    const promises = Array.from(balanceMap.entries()).map(
-      async ([denomination, { totalBalance }]) => {
-        const config = assetConfig[denomination];
-        if (!config) return null;
-
-        const symbol = getDisplaySymbol(denomination);
-
-        // Calculate fiat value using pricing service
-        const fiatValue = await pricingService.getFiatValue(
-          totalBalance,
-          denomination as AssetTicker,
-          FiatCurrency.USD
-        );
+        const price = prices[aggAsset.symbol] || 0;
+        const fiatValue = aggAsset.totalBalance * price;
 
         return {
-          id: denomination,
-          name: config.name,
-          symbol,
-          amount: formatTokenAmount(totalBalance, denomination as AssetTicker, false),
+          id: aggAsset.symbol,
+          name: aggAsset.name,
+          symbol: aggAsset.symbol,
+          amount: formatTokenAmount(aggAsset.totalBalance, aggAsset.symbol),
           fiatValue: fiatValue,
-          fiatCurrency: FiatCurrency.USD,
-          icon: config.icon,
-          color: config.color,
+          fiatCurrency: 'USD',
+          icon: uiConfig.icon,
+          color: uiConfig.color,
         };
-      }
-    );
+      });
 
-    // Convert to Asset array with real data and calculate fiat values
-    const assetList = (await Promise.all(promises)).filter(Boolean) as Asset[];
+      // Sort by USD value descending
+      const sortedAssets = mappedAssets.sort((a, b) => b.fiatValue - a.fiatValue);
+      setAssets(sortedAssets);
+    };
 
-    // Sort by USD value descending
-    return assetList.sort((a, b) => {
-      return b.fiatValue - a.fiatValue;
-    });
-  };
+    calculateAssets();
+  }, [aggregatedAssets]);
 
   const handleAssetPress = (asset: Asset) => {
-    if (!wallet?.id) return;
+    if (!activeWalletId) return;
 
     router.push({
       pathname: '/token-details',
       params: {
-        walletId: wallet.id,
+        walletId: activeWalletId,
         token: asset.id,
       },
     });
   };
 
-  useEffect(() => {
-    getAssetsWithFiatValue().then(setAssets);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balances.list]);
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <Header isLoading={balances.isLoading} title="Your Assets" />
+      <Header isLoading={isLoading} title="Your Assets" />
 
       {/* Assets List */}
       <ScrollView
@@ -95,7 +91,7 @@ export default function AssetsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {assets.length > 0 ? (
-          assets.map(asset => (
+          assets.map((asset) => (
             <TouchableOpacity
               key={asset.id}
               style={styles.assetRow}
@@ -103,8 +99,8 @@ export default function AssetsScreen() {
             >
               <View style={styles.assetInfo}>
                 <View style={[styles.assetIcon, { backgroundColor: asset.color }]}>
-                  {typeof asset.icon === 'string' ? (
-                    <Text style={styles.assetIconText}>{asset.icon}</Text>
+                  {typeof asset.icon === 'string' || !asset.icon ? (
+                    <Text style={styles.assetIconText}>{asset.symbol[0]}</Text>
                   ) : (
                     <Image source={asset.icon} style={styles.assetIconImage} />
                   )}
@@ -171,6 +167,7 @@ const styles = StyleSheet.create({
   assetIconText: {
     fontSize: 24,
     color: colors.text,
+    fontWeight: 'bold',
   },
   assetIconImage: {
     width: 32,

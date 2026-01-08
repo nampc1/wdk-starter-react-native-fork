@@ -1,4 +1,5 @@
-import { assetConfig } from '@/config/assets';
+import { tokenUiConfigs } from '@/config/token';
+import { chainUiConfigs } from '@/config/chain';
 import formatAmount from '@/utils/format-amount';
 import { useLocalSearchParams } from 'expo-router';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
@@ -6,7 +7,6 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TokenDetails } from '../components/TokenDetails';
-import { networkConfigs } from '@/config/networks';
 import Header from '@/components/header';
 import { colors } from '@/constants/colors';
 import { useAggregatedBalances } from '@/hooks/use-aggregated-balances';
@@ -27,8 +27,8 @@ export default function TokenDetailsScreen() {
     ? {
         symbol: assetData.symbol,
         name: assetData.name,
-        icon: assetConfig[assetData.symbol]?.icon || null, // Look up config
-        color: assetConfig[assetData.symbol]?.color || colors.primary,
+        icon: tokenUiConfigs[assetData.symbol]?.icon || null, // Look up config
+        color: tokenUiConfigs[assetData.symbol]?.color || colors.primary,
         totalBalance: assetData.totalBalance,
         totalUSDValue: 0, // Placeholder
         networkBalances: assetData.networkBalances.map((nb) => ({
@@ -47,7 +47,9 @@ export default function TokenDetailsScreen() {
     const networkBalance = tokenData.networkBalances.find((nb) => nb.network === network);
     if (!networkBalance) return;
 
-    const networkName = networkConfigs[network]?.name || network;
+    // Use chainUiConfigs for network name
+    const uiConfig = chainUiConfigs[network as keyof typeof chainUiConfigs];
+    const networkName = uiConfig?.name || network;
 
     router.push({
       pathname: '/send/details',

@@ -1,9 +1,7 @@
 import Header from '@/components/header';
 import { clearAvatar } from '@/config/avatar-options';
-import { networkConfigs } from '@/config/networks';
+import { chainUiConfigs } from '@/config/chain';
 import useWalletAvatar from '@/hooks/use-wallet-avatar';
-import getDisplaySymbol from '@/utils/get-display-symbol';
-import { NetworkType, useWallet } from '@tetherto/wdk-react-native-provider';
 import * as Clipboard from 'expo-clipboard';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
 import { Copy, Info, Shield, Trash2, Wallet } from 'lucide-react-native';
@@ -12,12 +10,17 @@ import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { toast } from 'sonner-native';
 import { colors } from '@/constants/colors';
+import { useWallet, useWalletManager, useWdkApp } from '@tetherto/wdk-react-native-core';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useDebouncedNavigation();
-  const { wallet, clearWallet, addresses } = useWallet();
+  const { activeWalletId } = useWdkApp();
+  const { addresses } = useWallet({ walletId: activeWalletId || undefined });
+  const { wallets, deleteWallet } = useWalletManager();
   const avatar = useWalletAvatar();
+
+  const wallet = wallets?.find((w) => w.identifier === activeWalletId);
 
   const handleDeleteWallet = () => {
     Alert.alert(
@@ -33,10 +36,12 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await clearWallet();
-              await clearAvatar();
-              toast.success('Wallet deleted successfully');
-              router.dismissAll('/');
+              if (activeWalletId) {
+                await deleteWallet(activeWalletId);
+                await clearAvatar();
+                toast.success('Wallet deleted successfully');
+                router.dismissAll('/');
+              }
             } catch (error) {
               console.error('Failed to delete wallet:', error);
               toast.error('Failed to delete wallet');
@@ -59,8 +64,20 @@ export default function SettingsScreen() {
   };
 
   const getNetworkName = (network: string) => {
-    return networkConfigs[network as NetworkType].name || network;
+    const config = chainUiConfigs[network as keyof typeof chainUiConfigs];
+    return config?.name || network;
   };
+
+  const addressList = addresses
+    ? Object.entries(addresses)
+        .map(([network, accountMap]) => {
+          return {
+            network,
+            address: accountMap[0], // Get account 0
+          };
+        })
+        .filter((item) => item.address)
+    : [];
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -81,7 +98,7 @@ export default function SettingsScreen() {
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Name</Text>
-              <Text style={styles.infoValue}>{wallet?.name || 'Unknown'}</Text>
+              <Text style={styles.infoValue}>{wallet?.identifier || 'Unknown'}</Text>
             </View>
 
             <View style={styles.infoRow}>
@@ -89,12 +106,13 @@ export default function SettingsScreen() {
               <Text style={styles.infoValue}>{avatar}</Text>
             </View>
 
-            <View style={[styles.infoRow, styles.infoRowLast]}>
+            {/* <View style={[styles.infoRow, styles.infoRowLast]}>
               <Text style={styles.infoLabel}>Enabled Assets</Text>
               <Text style={styles.infoValue}>
-                {wallet?.enabledAssets?.map(asset => getDisplaySymbol(asset)).join(', ') || 'None'}
+                 // Enabled assets might not be directly available on the core wallet object nicely formatted
+                 All
               </Text>
-            </View>
+            </View> */}
           </View>
         </View>
 
@@ -106,24 +124,23 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.addressCard}>
-            {addresses &&
-              Object.entries(addresses).map(([network, address], index, array) => (
-                <TouchableOpacity
-                  key={network}
-                  style={[
-                    styles.addressRow,
-                    index === array.length - 1 ? styles.addressRowLast : null,
-                  ]}
-                  onPress={() => handleCopyAddress(address as string, getNetworkName(network))}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.addressContent}>
-                    <Text style={styles.networkLabel}>{getNetworkName(network)}</Text>
-                    <Text style={styles.addressValue}>{formatAddress(address as string)}</Text>
-                  </View>
-                  <Copy size={18} color={colors.primary} />
-                </TouchableOpacity>
-              ))}
+            {addressList.map(({ network, address }, index) => (
+              <TouchableOpacity
+                key={network}
+                style={[
+                  styles.addressRow,
+                  index === addressList.length - 1 ? styles.addressRowLast : null,
+                ]}
+                onPress={() => handleCopyAddress(address, getNetworkName(network))}
+                activeOpacity={0.7}
+              >
+                <View style={styles.addressContent}>
+                  <Text style={styles.networkLabel}>{getNetworkName(network)}</Text>
+                  <Text style={styles.addressValue}>{formatAddress(address)}</Text>
+                </View>
+                <Copy size={18} color={colors.primary} />
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 

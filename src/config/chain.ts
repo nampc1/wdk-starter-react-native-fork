@@ -1,126 +1,106 @@
 import { NetworkConfigs } from '@tetherto/wdk-react-native-core';
 
+export enum Network {
+  ETHEREUM = 'ethereum',
+  BITCOIN = 'bitcoin',
+  POLYGON = 'polygon',
+  ARBITRUM = 'arbitrum',
+  TON = 'ton',
+  TRON = 'tron',
+  SOLANA = 'solana',
+  LIGHTNING = 'lightning',
+}
+
+export type ChainUiConfig = {
+  name: string;
+  color: string;
+  icon: any;
+  description?: string;
+};
+
+export const chainUiConfigs: Record<string, ChainUiConfig> = {
+  [Network.ETHEREUM]: {
+    name: 'Ethereum',
+    color: '#627EEA',
+    icon: require('../../assets/images/chains/ethereum-eth-logo.png'),
+    description: 'Ethereum network',
+  },
+  [Network.BITCOIN]: {
+    name: 'Bitcoin',
+    color: '#F7931A',
+    icon: require('../../assets/images/chains/bitcoin-btc-logo.png'),
+    description: 'Bitcoin Network',
+  },
+  [Network.POLYGON]: {
+    name: 'Polygon',
+    color: '#8247E5',
+    icon: require('../../assets/images/chains/polygon-matic-logo.png'),
+    description: 'Polygon Network',
+  },
+  [Network.ARBITRUM]: {
+    name: 'Arbitrum',
+    color: '#28A0F0',
+    icon: require('../../assets/images/chains/arbitrum-arb-logo.png'),
+    description: 'Arbitrum One',
+  },
+  [Network.TON]: {
+    name: 'TON',
+    color: '#0098EA',
+    icon: require('../../assets/images/chains/ton-logo.png'),
+    description: 'TON Network',
+  },
+  [Network.TRON]: {
+    name: 'Tron',
+    color: '#FF0013',
+    icon: require('../../assets/images/chains/tron-trx-logo.png'),
+    description: 'Tron Network',
+  },
+  [Network.SOLANA]: {
+    name: 'Solana',
+    color: '#9945FF',
+    icon: require('../../assets/images/chains/solana-sol-logo.png'),
+    description: 'Solana Network',
+  },
+  [Network.LIGHTNING]: {
+    name: 'Lightning',
+    color: '#7B1AF8',
+    icon: require('../../assets/images/chains/lightning-logo.png'),
+    description: 'Lightning Network',
+  },
+};
+
 const chainConfigs: NetworkConfigs = {
-  ethereum: {
+  [Network.ETHEREUM]: {
     chainId: 1, // Sepolia
-    blockchain: 'ethereum',
+    blockchain: 'Ethereum',
     provider: 'https://eth.llamarpc.com',
   },
-  // 'bitcoin-testnet': {
-  //   network: 'testnet',
+  // [Network.BITCOIN]: {
   //   host: 'electrum.blockstream.info',
-  //   port: '50001',
+  //   port: 50001,
   // },
-  // polygon: {
-  //   chainId: 137, // Sepolia
+  // [Network.POLYGON]: {
+  //   chainId: 137,
   //   blockchain: 'polygon',
   //   provider: 'https://api.zan.top/polygon-mainnet'
   // },
-  // arbitrum: {
-  //   chainId: 42161, // Sepolia
+  // [Network.ARBITRUM]: {
+  //   chainId: 42161,
   //   blockchain: 'arbitrum',
   //   provider: 'https://api.zan.top/arb-one'
   // },
-  // plasma: {
-  //   chainId: 9745, // Sepolia
-  //   blockchain: 'plasma',
-  //   provider: 'https://rpc.plasma.to'
+  // [Network.TON]: {
+  //   tonApiClient: {
+  //     url: 'https://tonapi.io',
+  //   },
+  //   tonClient: {
+  //     url: 'https://toncenter.com/api/v2/jsonRPC',
+  //   },
   // },
-  // sepolia: {
-  //   chainId: 11155111, // Sepolia
-  //   blockchain: 'sepolia',
-  //   provider: 'https://ethereum-sepolia.gateway.tatum.io',
-  //   bundlerUrl: 'https://api.candide.dev/public/v3/sepolia',
-  //   paymasterUrl: 'https://api.candide.dev/public/v3/sepolia',
-  //   paymasterAddress: '0x8b1f6cb5d062aa2ce8d581942bbb960420d875ba',
-  //   entryPointAddress: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-  //   safeModulesVersion: '0.3.0',
-  //   paymasterToken: {
-  //     address: '0xFa5854FBf9964330d761961F46565AB7326e5a3b',
-  //   }
+  // [Network.TRON]: {
+  //   chainId: 3448148188,
+  //   provider: 'https://trongrid.io',
   // },
-  // spark: {},
 };
-// const getChainsConfig = () => {
-//   return {
-//     ethereum: {
-//       chainId: 1,
-//       blockchain: 'ethereum',
-//       provider: 'https://eth.merkle.io',
-//       bundlerUrl: 'https://api.candide.dev/public/v3/ethereum',
-//       paymasterUrl: 'https://api.candide.dev/public/v3/ethereum',
-//       paymasterAddress: '0x8b1f6cb5d062aa2ce8d581942bbb960420d875ba',
-//       entrypointAddress: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-//       transferMaxFee: 5000000,
-//       swapMaxFee: 5000000,
-//       bridgeMaxFee: 5000000,
-//       paymasterToken: {
-//         address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-//       }
-//     },
-//     arbitrum: {
-//       chainId: 42161,
-//       blockchain: 'arbitrum',
-//       provider: 'https://arb1.arbitrum.io/rpc',
-//       bundlerUrl: 'https://api.candide.dev/public/v3/arbitrum',
-//       paymasterUrl: 'https://api.candide.dev/public/v3/arbitrum',
-//       paymasterAddress: '0x8b1f6cb5d062aa2ce8d581942bbb960420d875ba',
-//       entrypointAddress: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-//       transferMaxFee: 5000000,
-//       swapMaxFee: 5000000,
-//       bridgeMaxFee: 5000000,
-//       paymasterToken: {
-//         address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
-//       },
-//     },
-//     polygon: {
-//       chainId: 137,
-//       blockchain: 'polygon',
-//       provider: 'https://1rpc.io/matic',
-//       bundlerUrl: 'https://api.candide.dev/public/v3/polygon',
-//       paymasterUrl: 'https://api.candide.dev/public/v3/polygon',
-//       paymasterAddress: '0x8b1f6cb5d062aa2ce8d581942bbb960420d875ba',
-//       entrypointAddress: '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-//       transferMaxFee: 5000000,
-//       swapMaxFee: 5000000,
-//       bridgeMaxFee: 5000000,
-//       paymasterToken: {
-//         address: '0xc2132d05d31c914a87c6611c10748aeb04b58e8f',
-//       },
-//       safeModulesVersion: '0.3.0',
-//     },
-//     ton: {
-//       tonApiClient: {
-//         url: 'https://tonapi.io',
-//       },
-//       tonClient: {
-//         url: 'https://toncenter.com/api/v2/jsonRPC',
-//       },
-//       paymasterToken: {
-//         address: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
-//       },
-//       transferMaxFee: 1000000000,
-//     },
-//     bitcoin: {
-//       host: 'api.ordimint.com',
-//       port: 50001,
-//     },
-//     tron: {
-//       chainId: 3448148188,
-//       provider: 'https://trongrid.io',
-//       gasFreeProvider: 'https://gasfree.io',
-//       apiKey: process.env.EXPO_PUBLIC_TRON_API_KEY!,
-//       apiSecret: process.env.EXPO_PUBLIC_TRON_API_SECRET!,
-//       serviceProvider: 'TKtWbdzEq5ss9vTS9kwRhBp5mXmBfBns3E',
-//       verifyingContract: 'THQGuFzL87ZqhxkgqYEryRAd7gqFqL5rdc',
-//       transferMaxFee: 10000000,
-//       swapMaxFee: 1000000,
-//       bridgeMaxFee: 1000000,
-//       paymasterToken: {
-//         address: 'TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf',
-//       },
-//     },
-//   };
-// };
 
 export default chainConfigs;

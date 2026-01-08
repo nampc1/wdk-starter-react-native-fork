@@ -1,37 +1,31 @@
 import Header from '@/components/header';
-import { assetConfig } from '@/config/assets';
-import { Network, networkConfigs } from '@/config/networks';
-import { NetworkType, useWallet } from '@tetherto/wdk-react-native-provider';
-import { useLocalSearchParams } from 'expo-router';
-import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
+import { chainUiConfigs } from '@/config/chain';
+import tokenConfigs from '@/config/token';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo } from 'react';
 import { FlatList, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '@/constants/colors';
 
-interface NetworkOption extends Network {
+import { useWallet, useWdkApp } from '@tetherto/wdk-react-native-core';
+
+interface NetworkOption {
+  id: string;
+  name: string;
+  color: string;
+  icon: any;
   address?: string;
   hasAddress: boolean;
   description?: string;
 }
 
-// Network descriptions for receive flow
-const NETWORK_DESCRIPTIONS = {
-  [NetworkType.ETHEREUM]: 'ERC20',
-  [NetworkType.POLYGON]: 'Polygon Network',
-  [NetworkType.ARBITRUM]: 'Arbitrum One',
-  [NetworkType.TON]: 'TON Network',
-  [NetworkType.TRON]: 'Tron Network',
-  [NetworkType.SOLANA]: 'Solana Network',
-  [NetworkType.SEGWIT]: 'Native Bitcoin Network',
-  [NetworkType.LIGHTNING]: 'Lightning Network',
-};
-
 export default function ReceiveSelectNetworkScreen() {
   const insets = useSafeAreaInsets();
-  const router = useDebouncedNavigation();
-  const { addresses } = useWallet();
+  const router = useRouter();
   const params = useLocalSearchParams();
+
+  const { activeWalletId } = useWdkApp();
+  const { addresses } = useWallet({ walletId: activeWalletId || undefined });
 
   const { tokenId, tokenSymbol, tokenName } = params as {
     tokenId: string;
@@ -39,30 +33,47 @@ export default function ReceiveSelectNetworkScreen() {
     tokenName: string;
   };
 
-  // Get available networks for the selected token
   const networks: NetworkOption[] = useMemo(() => {
-    const tokenConfig = assetConfig[tokenId];
-    if (!tokenConfig) {
-      return [];
-    }
+    // Find all networks that support this token
+    const supportedNetworks = Object.keys(tokenConfigs).filter((networkKey) => {
+      const netConfig = tokenConfigs[networkKey];
+      if (!netConfig) return false;
 
-    return tokenConfig.supportedNetworks.map(networkType => {
-      const network = networkConfigs[networkType];
-      const address = addresses?.[network.id as NetworkType];
+      // Check native token
+      if (netConfig.native.symbol === tokenId) return true;
+
+      // Check token list
+      return netConfig.tokens.some((t) => t.symbol === tokenId);
+    });
+
+    return supportedNetworks.map((networkKey) => {
+      // Cast to keyof typeof chainUiConfigs to avoid potential type issues if keys don't perfectly match
+      const uiConfig = chainUiConfigs[networkKey as keyof typeof chainUiConfigs] || {
+        name: networkKey,
+        icon: null,
+        color: colors.textSecondary,
+        description: '',
+      };
+
+      // Get address for Account 0
+      const accountAddresses = addresses[networkKey];
+      const address = accountAddresses ? accountAddresses[0] : undefined;
+
       return {
-        ...network,
+        id: networkKey,
+        name: uiConfig.name,
+        color: uiConfig.color,
+        icon: uiConfig.icon,
         address,
         hasAddress: Boolean(address),
-        description: NETWORK_DESCRIPTIONS[network.id as NetworkType],
+        description: uiConfig.description || uiConfig.name,
       };
     });
   }, [tokenId, addresses]);
 
   const handleSelectNetwork = useCallback(
     (network: NetworkOption) => {
-      if (!network.hasAddress) {
-        return; // Don't allow selection if no address available
-      }
+      if (!network.hasAddress || !network.address) return;
 
       router.push({
         pathname: '/receive/details',
@@ -97,9 +108,9 @@ export default function ReceiveSelectNetworkScreen() {
               isDisabled && styles.networkIconDisabled,
             ]}
           >
-            {typeof item.icon === 'string' ? (
+            {typeof item.icon === 'string' || !item.icon ? (
               <Text style={[styles.networkIconText, isDisabled && styles.networkIconTextDisabled]}>
-                {item.icon}
+                {item.name[0]}
               </Text>
             ) : (
               <Image
@@ -129,17 +140,15 @@ export default function ReceiveSelectNetworkScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Header title="Select network" style={styles.header} />
-
       <View style={styles.description}>
         <Text style={styles.descriptionText}>
           Select the network you will be using to receive {tokenName}
         </Text>
       </View>
-
       <FlatList
         data={networks}
         renderItem={renderNetwork}
-        keyExtractor={item => item.id}
+        keyExtractor={(item) => item.id}
         style={styles.networksList}
         contentContainerStyle={styles.networksContent}
         showsVerticalScrollIndicator={false}
@@ -196,6 +205,7 @@ const styles = StyleSheet.create({
   networkIconText: {
     fontSize: 18,
     color: colors.white,
+    fontWeight: 'bold',
   },
   networkIconTextDisabled: {
     opacity: 0.6,

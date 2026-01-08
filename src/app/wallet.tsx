@@ -27,7 +27,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { assetConfig } from '../config/assets';
+import { tokenUiConfigs } from '@/config/token';
 import formatAmount from '@/utils/format-amount';
 import formatTokenAmount from '@/utils/format-token-amount';
 import { colors } from '@/constants/colors';
@@ -43,26 +43,25 @@ export default function WalletScreen() {
   const [mounted, setMounted] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  // Transform new hook data to old UI shape to minimize JSX changes
   const aggregatedBalances = useMemo(() => {
     return assets.map((asset) => {
-      // Try to find config in existing assetConfig, or fallback
-      const config = assetConfig[asset.symbol] || {
-        name: asset.name,
+      const config = tokenUiConfigs[asset.symbol] || {
         color: colors.primary,
-        icon: null, // Fallback
+        icon: null,
       };
 
       return {
         denomination: asset.symbol,
         balance: asset.totalBalance,
         usdValue: 0, // Placeholder until pricing is hooked up
-        config: config,
+        config: {
+          name: asset.name,
+          ...config,
+        },
       };
     });
   }, [assets]);
 
-  // Animated border opacity
   const borderOpacity = scrollY.interpolate({
     inputRange: [0, 50],
     outputRange: [0, 1],

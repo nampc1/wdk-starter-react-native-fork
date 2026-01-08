@@ -1,5 +1,33 @@
 import { NetworkTokens } from '@tetherto/wdk-react-native-core';
 
+export type TokenUiConfig = {
+  icon: any;
+  color: string;
+};
+
+export const tokenUiConfigs: Record<string, TokenUiConfig> = {
+  ETH: {
+    icon: require('../../assets/images/chains/ethereum-eth-logo.png'),
+    color: '#627EEA',
+  },
+  USDT: {
+    icon: require('../../assets/images/tokens/tether-usdt-logo.png'),
+    color: '#26A17B',
+  },
+  XAUT: {
+    icon: require('../../assets/images/tokens/tether-xaut-logo.png'),
+    color: '#D6AD3F',
+  },
+  BTC: {
+    icon: require('../../assets/images/tokens/bitcoin-btc-logo.png'),
+    color: '#F7931A',
+  },
+  USAT: {
+    icon: null,
+    color: '#009393',
+  },
+};
+
 const tokenConfigs: Record<string, NetworkTokens> = {
   ethereum: {
     native: {

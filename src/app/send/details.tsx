@@ -1,18 +1,10 @@
-import { AssetTicker, useWallet, WDKService } from '@tetherto/wdk-react-native-provider';
 import { CryptoAddressInput } from '@tetherto/wdk-uikit-react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
 import { RefreshCw } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FiatCurrency, pricingService } from '@/services/pricing-service';
 import { useKeyboard } from '@/hooks/use-keyboard';
 import { colors } from '@/constants/colors';
-import {
-  getAssetTicker,
-  getNetworkType,
-  calculateGasFee,
-  type GasFeeEstimate,
-} from '@/utils/gas-fee-calculator';
 import {
   Alert,
   Keyboard,
@@ -29,22 +21,29 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import getDisplaySymbol from '@/utils/get-display-symbol';
-import formatTokenAmount from '@/utils/format-token-amount';
-import formatUSDValue from '@/utils/format-usd-value';
 import Header from '@/components/header';
-import { toast } from 'sonner-native';
+
+import { useWdkApp, useRefreshBalance } from '@tetherto/wdk-react-native-core';
+
+interface GasFeeEstimate {
+  fee?: number;
+  error?: string;
+}
 
 export default function SendDetailsScreen() {
   const insets = useSafeAreaInsets();
   const router = useDebouncedNavigation();
-  const { refreshWalletBalance } = useWallet();
+
+  const { activeWalletId } = useWdkApp();
+  const { mutate: refreshBalances } = useRefreshBalance();
+
   const params = useLocalSearchParams();
   const scrollViewRef = useRef<ScrollView>(null);
   const amountSectionYPosition = useRef<number>(0);
   const {
     tokenId,
     tokenSymbol,
+    tokenName,
     tokenBalance,
     tokenBalanceUSD,
     networkName,
@@ -80,20 +79,16 @@ export default function SendDetailsScreen() {
   const [isAmountInputFocused, setIsAmountInputFocused] = useState(false);
   const keyboard = useKeyboard();
 
-  // Handle scanned address from QR scanner
   useEffect(() => {
     if (scannedAddress) {
       setRecipientAddress(scannedAddress);
     }
   }, [scannedAddress]);
 
-  // Auto-scroll when keyboard opens
   useEffect(() => {
     if (keyboard.isVisible && isAmountInputFocused) {
-      // Small delay to ensure smooth animation
       setTimeout(() => {
         const scrollTo = amountSectionYPosition.current - 40;
-
         scrollViewRef.current?.scrollTo({
           y: Math.max(0, scrollTo),
           animated: true,
@@ -102,90 +97,38 @@ export default function SendDetailsScreen() {
     }
   }, [keyboard.isVisible, isAmountInputFocused]);
 
-  // Calculate token price using pricing service
   useEffect(() => {
+    // MOCK: Just set a hardcoded price for demo
     const calculateTokenPrice = async () => {
-      try {
-        const assetTicker = getAssetTicker(tokenId);
-        const price = await pricingService.getFiatValue(1, assetTicker, FiatCurrency.USD);
-        setTokenPrice(price);
-      } catch (error) {
-        console.error('Failed to get token price:', error);
-        setTokenPrice(0);
-      }
+      // Could use a map here if we want realistic mocks
+      const mockPrices: Record<string, number> = {
+        BTC: 95000,
+        USDT: 1,
+        XAUT: 2450,
+      };
+
+      setTokenPrice(mockPrices[tokenSymbol] || 0);
     };
-
     calculateTokenPrice();
-  }, [tokenId]);
+  }, [tokenSymbol]); // Use symbol instead of ID
 
-  // Helper function to convert amount to token value based on input mode
-  const getTokenAmount = useCallback(
-    (amountValue: string) => {
-      const numericAmount = parseFloat(amountValue.replace(/,/g, ''));
-      if (inputMode === 'fiat' && tokenPrice > 0) {
-        return numericAmount / tokenPrice;
-      }
-      return numericAmount;
-    },
-    [inputMode, tokenPrice]
-  );
+  // Pre-calculate fee (MOCK)
+  const handleCalculateGasFee = useCallback(async (showLoading = true, amountValue?: string) => {
+    if (showLoading) {
+      setIsLoadingGasEstimate(true);
+      setGasEstimate((prev) => ({ ...prev, error: undefined }));
+    }
 
-  // Pre-calculate fee immediately when screen loads
-  const handleCalculateGasFee = useCallback(
-    async (showLoading = true, amountValue?: string) => {
-      if (showLoading) {
-        setIsLoadingGasEstimate(true);
-        setGasEstimate(prev => ({ ...prev, error: undefined }));
-      }
-
-      // Convert amount to token value if provided
-      const numericAmount = amountValue ? getTokenAmount(amountValue) : undefined;
-
-      const estimate = await calculateGasFee(networkId, tokenId, numericAmount);
-
-      setGasEstimate(estimate);
+    // MOCK DELAY & FEE
+    setTimeout(() => {
+      setGasEstimate({ fee: 0.0002 }); // Hardcoded mock fee
       setIsLoadingGasEstimate(false);
-    },
-    [networkId, tokenId, getTokenAmount]
-  );
+    }, 1000);
+  }, []);
 
-  // Pre-calculate fee when screen loads (skip for BTC as it requires amount)
   useEffect(() => {
-    const isBtc = tokenId.toLowerCase() === 'btc';
-    if (!isBtc) {
-      handleCalculateGasFee();
-    }
-  }, [handleCalculateGasFee, tokenId]);
-
-  // For BTC, calculate gas fee when amount changes
-  useEffect(() => {
-    const isBtc = tokenId.toLowerCase() === 'btc';
-    if (isBtc && amount && parseFloat(amount) > 0) {
-      handleCalculateGasFee(true, amount);
-    }
-  }, [amount, tokenId, handleCalculateGasFee]);
-
-  // Refetch token price and gas fee every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      // Refetch token price
-      try {
-        const assetTicker = getAssetTicker(tokenId);
-        const price = await pricingService.getFiatValue(1, assetTicker, FiatCurrency.USD);
-        setTokenPrice(price);
-      } catch (error) {
-        console.error('Failed to refresh token price:', error);
-      }
-
-      // Refetch gas fee without showing loading state
-      const isBtc = tokenId.toLowerCase() === 'btc';
-      if (!isBtc || (isBtc && amount && parseFloat(amount) > 0)) {
-        handleCalculateGasFee(false, amount);
-      }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [tokenId, handleCalculateGasFee, amount]);
+    handleCalculateGasFee();
+  }, [handleCalculateGasFee]);
 
   const handleQRScan = useCallback(() => {
     router.push({
@@ -218,203 +161,102 @@ export default function SendDetailsScreen() {
 
   const handleUseMax = useCallback(() => {
     const numericBalance = parseFloat(tokenBalance.replace(/,/g, ''));
-    const numericBalanceUSD = parseFloat(tokenBalanceUSD.replace(/[$,]/g, ''));
 
     if (inputMode === 'token') {
-      // Subtract gas fee from token balance
       let maxAmount = numericBalance;
       if (gasEstimate.fee !== undefined) {
         maxAmount = Math.max(0, numericBalance - gasEstimate.fee);
-        toast.info('To avoid transaction failure, the max amount has been reduced by the gas fee');
       }
       setAmount(maxAmount.toString());
     } else {
-      // Subtract gas fee (converted to USD) from balance USD
-      let maxAmountUSD = numericBalanceUSD;
-      if (gasEstimate.fee !== undefined && tokenPrice > 0) {
-        const gasFeeUSD = gasEstimate.fee * tokenPrice;
-        maxAmountUSD = Math.max(0, numericBalanceUSD - gasFeeUSD);
-      }
-      // Format fiat amount to 2 decimal places
+      // Simplistic USD max logic for demo
+      const maxAmountUSD = numericBalance * tokenPrice;
       setAmount(maxAmountUSD.toFixed(2));
     }
     setAmountError(null);
-  }, [inputMode, tokenBalance, tokenBalanceUSD, gasEstimate.fee, tokenPrice]);
+  }, [inputMode, tokenBalance, gasEstimate.fee, tokenPrice]);
 
   const toggleInputMode = useCallback(() => {
-    setInputMode(prev => (prev === 'token' ? 'fiat' : 'token'));
+    setInputMode((prev) => (prev === 'token' ? 'fiat' : 'token'));
     setAmount('');
     setAmountError(null);
   }, []);
 
-  // Validate amount when it changes
   const validateAmount = useCallback(
     (value: string) => {
       if (!value || parseFloat(value) <= 0) {
         setAmountError(null);
         return;
       }
-
       const numericBalance = parseFloat(tokenBalance.replace(/,/g, ''));
-      const numericBalanceUSD = parseFloat(tokenBalanceUSD.replace(/[$,]/g, ''));
       const numericAmount = parseFloat(value.replace(/,/g, ''));
 
       if (inputMode === 'token') {
         if (numericAmount > numericBalance) {
-          setAmountError(
-            `Maximum: ${formatTokenAmount(numericBalance, tokenSymbol as AssetTicker)}`
-          );
-        } else {
-          setAmountError(null);
-        }
-      } else {
-        if (numericAmount > numericBalanceUSD) {
-          setAmountError(`Maximum: ${tokenBalanceUSD}`);
+          setAmountError(`Maximum: ${numericBalance} ${tokenSymbol}`);
         } else {
           setAmountError(null);
         }
       }
     },
-    [inputMode, tokenBalance, tokenBalanceUSD, tokenSymbol]
+    [inputMode, tokenBalance, tokenSymbol]
   );
 
   const handleAmountChange = useCallback(
     (value: string) => {
-      // Allow only numbers, decimal point, and comma
       const sanitized = value.replace(/[^0-9.,]/g, '');
-
-      // Replace comma with dot for consistent decimal handling
       const normalized = sanitized.replace(',', '.');
-
-      // Prevent multiple decimal points
       const parts = normalized.split('.');
       const formatted = parts[0] + (parts.length > 1 ? '.' + parts[1] : '');
-
       setAmount(formatted);
       validateAmount(formatted);
     },
     [validateAmount]
   );
 
-  const handleAmountInputFocus = useCallback(() => {
-    setIsAmountInputFocused(true);
-  }, []);
-
-  const handleAmountInputBlur = useCallback(() => {
-    setIsAmountInputFocused(false);
-  }, []);
-
+  const handleAmountInputFocus = useCallback(() => setIsAmountInputFocused(true), []);
+  const handleAmountInputBlur = useCallback(() => setIsAmountInputFocused(false), []);
   const handleAmountSectionLayout = useCallback((event: any) => {
     amountSectionYPosition.current = event.nativeEvent.layout.y;
   }, []);
 
-  const validateTransaction = useCallback(() => {
-    if (!recipientAddress) {
-      Alert.alert('Error', 'Please enter a recipient address');
-      return false;
-    }
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return false;
-    }
-
-    // Check if amount exceeds balance
-    const numericBalance = parseFloat(tokenBalance.replace(',', ''));
-    const numericAmount = parseFloat(amount.replace(',', ''));
-
-    if (inputMode === 'token' && numericAmount > numericBalance) {
-      Alert.alert('Error', 'Insufficient balance');
-      return false;
-    }
-
-    return true;
-  }, [recipientAddress, amount, tokenBalance, inputMode]);
-
   const handleSend = useCallback(async () => {
-    if (!validateTransaction()) {
+    if (!recipientAddress || !amount) {
+      Alert.alert('Error', 'Please fill all fields');
       return;
     }
 
     setSendingTransaction(true);
     setTransactionResult(null);
 
-    try {
-      const networkType = getNetworkType(networkId);
-      const assetTicker = getAssetTicker(tokenId);
-
-      // Convert fiat to token amount if in fiat mode
-      let numericAmount = parseFloat(amount);
-      if (inputMode === 'fiat' && tokenPrice > 0) {
-        numericAmount = numericAmount / tokenPrice;
-      }
-
-      const sendResult = await WDKService.sendByNetwork(
-        networkType,
-        0, // account index
-        numericAmount,
-        recipientAddress,
-        assetTicker
-      );
-
-      setTransactionResult({ txId: sendResult });
-      setShowConfirmation(true);
-    } catch (error) {
-      console.error('Transaction failed:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Transaction failed';
-
-      Alert.alert('Transaction Failed', errorMessage, [{ text: 'OK' }]);
-
-      setTransactionResult({ error: errorMessage });
-    } finally {
+    // MOCK SEND TRANSACTION
+    setTimeout(() => {
       setSendingTransaction(false);
-      refreshWalletBalance();
-    }
-  }, [
-    validateTransaction,
-    amount,
-    recipientAddress,
-    networkId,
-    tokenId,
-    refreshWalletBalance,
-    inputMode,
-    tokenPrice,
-  ]);
+      setTransactionResult({ txId: { hash: '0x123...mock', fee: '0.0002' } });
+      setShowConfirmation(true);
+
+      // Refresh balances
+      refreshBalances({
+        accountIndex: 0,
+        type: 'all',
+        walletId: activeWalletId || undefined,
+      });
+    }, 2000);
+  }, [amount, recipientAddress, activeWalletId, refreshBalances]);
 
   const handleConfirmSend = useCallback(async () => {
     setShowConfirmation(false);
-    router.replace('/wallet');
+    router.replace('/wallet'); // Go back to dashboard
   }, [router]);
 
   const balanceDisplay = useMemo(() => {
     if (inputMode === 'token') {
-      return `Balance: ${formatTokenAmount(parseFloat(tokenBalance), tokenSymbol as AssetTicker)}`;
+      return `Balance: ${tokenBalance} ${tokenSymbol}`;
     }
-    return `Balance: ${formatUSDValue(parseFloat(tokenBalanceUSD))}`;
+    return `Balance: ${tokenBalanceUSD}`;
   }, [inputMode, tokenBalance, tokenBalanceUSD, tokenSymbol]);
 
-  const getFeeFromTransactionResult = (
-    transactionResult: { txId?: { fee: string; hash: string } },
-    token: AssetTicker
-  ) => {
-    const fee = transactionResult.txId?.fee;
-    if (!fee) return formatTokenAmount(0, token);
-
-    const value = Number(fee) / WDKService.getDenominationValue(token);
-    return formatTokenAmount(value, token);
-  };
-
-  const getTransactionAmout = useCallback(() => {
-    const numericAmount = parseFloat(amount.replace(/,/g, ''));
-    if (inputMode === 'fiat' && tokenPrice > 0) {
-      return formatUSDValue(numericAmount);
-    }
-
-    return formatTokenAmount(parseFloat(amount || '0'), tokenSymbol as AssetTicker);
-  }, [inputMode, tokenPrice, amount, tokenSymbol]);
-
-  const isUseMaxDisabled = useMemo(() => {
-    return tokenId.toLowerCase() !== 'btc' && gasEstimate.fee === undefined;
-  }, [tokenId, gasEstimate.fee]);
+  const isUseMaxDisabled = gasEstimate.fee === undefined;
 
   return (
     <>
@@ -424,7 +266,7 @@ export default function SendDetailsScreen() {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.container}>
-            <Header title={`Send ${getDisplaySymbol(tokenSymbol)}`} style={styles.header} />
+            <Header title={`Send ${tokenSymbol}`} style={styles.header} />
 
             <ScrollView
               ref={scrollViewRef}
@@ -433,12 +275,11 @@ export default function SendDetailsScreen() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {/* Transaction Summary */}
               <View style={styles.transactionRecap}>
                 <View style={styles.recapRow}>
                   <Text style={styles.recapLabel}>Token:</Text>
                   <Text style={styles.recapValue}>
-                    {getDisplaySymbol(tokenSymbol)}
+                    {tokenName}
                     <Text style={styles.recapValueSecondary}>({tokenSymbol})</Text>
                   </Text>
                 </View>
@@ -461,9 +302,7 @@ export default function SendDetailsScreen() {
                 <View style={styles.amountInputContainer}>
                   <TextInput
                     style={styles.amountInput}
-                    placeholder={
-                      inputMode === 'token' ? `${getDisplaySymbol(tokenSymbol)} 0.00` : '$ 0.00'
-                    }
+                    placeholder={inputMode === 'token' ? `0.00` : '$ 0.00'}
                     placeholderTextColor={colors.textTertiary}
                     value={amount}
                     onChangeText={handleAmountChange}
@@ -473,7 +312,7 @@ export default function SendDetailsScreen() {
                   />
                   <TouchableOpacity style={styles.currencyToggle} onPress={toggleInputMode}>
                     <Text style={styles.currencyToggleText}>
-                      {inputMode === 'token' ? getDisplaySymbol(tokenSymbol) : 'USD'}
+                      {inputMode === 'token' ? tokenSymbol : 'USD'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -498,38 +337,18 @@ export default function SendDetailsScreen() {
                 <View style={styles.gasTitleRow}>
                   <Text style={styles.gasTitle}>Estimated Fee:</Text>
                   <TouchableOpacity
-                    onPress={() => handleCalculateGasFee(true, amount)}
-                    disabled={isLoadingGasEstimate || (tokenId.toLowerCase() === 'btc' && !amount)}
+                    onPress={() => handleCalculateGasFee()}
                     style={styles.refreshButton}
                   >
-                    <RefreshCw
-                      size={18}
-                      color={
-                        isLoadingGasEstimate || (tokenId.toLowerCase() === 'btc' && !amount)
-                          ? colors.textTertiary
-                          : colors.primary
-                      }
-                      style={isLoadingGasEstimate ? styles.refreshIconLoading : undefined}
-                    />
+                    <RefreshCw size={18} color={colors.primary} />
                   </TouchableOpacity>
                 </View>
                 {isLoadingGasEstimate ? (
                   <Text style={styles.gasAmount}>Calculating...</Text>
-                ) : gasEstimate.error ? (
-                  <Text style={styles.gasError}>{gasEstimate.error}</Text>
-                ) : tokenId.toLowerCase() === 'btc' && (!amount || parseFloat(amount) <= 0) ? (
-                  <Text style={styles.gasError}>Insert amount for gas fee estimation</Text>
-                ) : gasEstimate.fee !== undefined ? (
-                  <>
-                    <Text style={styles.gasAmount}>
-                      {formatTokenAmount(gasEstimate.fee, tokenSymbol as AssetTicker)}
-                    </Text>
-                    <Text style={styles.gasUsd}>
-                      ≈ {formatUSDValue(gasEstimate.fee * tokenPrice)}
-                    </Text>
-                  </>
                 ) : (
-                  <Text style={styles.gasAmount}>Loading fee estimate...</Text>
+                  <Text style={styles.gasAmount}>
+                    {gasEstimate.fee ? `${gasEstimate.fee} ${tokenSymbol}` : '0.00'}
+                  </Text>
                 )}
               </View>
             </ScrollView>
@@ -537,9 +356,7 @@ export default function SendDetailsScreen() {
             <View
               style={[
                 styles.bottomContainer,
-                {
-                  paddingBottom: (keyboard.isVisible ? 0 : insets.bottom) + 16,
-                },
+                { paddingBottom: (keyboard.isVisible ? 0 : insets.bottom) + 16 },
               ]}
             >
               <TouchableOpacity
@@ -580,18 +397,9 @@ export default function SendDetailsScreen() {
               Your transaction has been submitted and is now processing.
             </Text>
 
-            {transactionResult?.txId && (
-              <View style={styles.transactionSummary}>
-                <Text style={styles.summaryLabel}>Fee:</Text>
-                <Text style={styles.summaryValue}>
-                  {getFeeFromTransactionResult(transactionResult, tokenSymbol as AssetTicker)}
-                </Text>
-              </View>
-            )}
-
             <View style={styles.transactionSummary}>
               <Text style={styles.summaryLabel}>Amount:</Text>
-              <Text style={styles.summaryValue}>{getTransactionAmout()}</Text>
+              {/*<Text style={styles.summaryValue}>{getTransactionAmout()}</Text>*/}
             </View>
 
             <View style={styles.transactionSummary}>
@@ -599,11 +407,6 @@ export default function SendDetailsScreen() {
               <Text style={styles.summaryValue} numberOfLines={1} ellipsizeMode="middle">
                 {recipientAddress}
               </Text>
-            </View>
-
-            <View style={styles.transactionSummary}>
-              <Text style={styles.summaryLabel}>Network:</Text>
-              <Text style={styles.summaryValue}>{networkName}</Text>
             </View>
 
             <TouchableOpacity style={styles.modalButton} onPress={handleConfirmSend}>
@@ -617,28 +420,12 @@ export default function SendDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    marginBottom: 16,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 108,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  header: { marginBottom: 16 },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 108 },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 14, color: colors.textSecondary, marginBottom: 8 },
   amountInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -648,78 +435,26 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     marginBottom: 8,
   },
-  amountInput: {
-    flex: 1,
-    fontSize: 24,
-    fontWeight: '600',
-    color: colors.text,
-  },
+  amountInput: { flex: 1, fontSize: 24, fontWeight: '600', color: colors.text },
   currencyToggle: {
     backgroundColor: colors.cardDark,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
   },
-  currencyToggleText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  balanceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  useMaxText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  balanceText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
-  gasSection: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 24,
-  },
-  gasTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  gasTitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  refreshButton: {
-    padding: 4,
-  },
-  refreshIconLoading: {
-    opacity: 0.5,
-  },
-  gasAmount: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  gasUsd: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  gasError: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  amountError: {
-    fontSize: 12,
-    color: colors.error,
-    marginTop: 4,
-  },
+  currencyToggleText: { color: colors.text, fontSize: 14, fontWeight: '500' },
+  balanceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  useMaxText: { color: colors.primary, fontSize: 14, fontWeight: '500' },
+  balanceText: { color: colors.textSecondary, fontSize: 14 },
+  gasSection: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginTop: 24 },
+  gasTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  gasTitle: { fontSize: 14, color: colors.textSecondary },
+  refreshButton: { padding: 4 },
+  refreshIconLoading: { opacity: 0.5 },
+  gasAmount: { fontSize: 18, fontWeight: '600', color: colors.text },
+  gasUsd: { fontSize: 14, color: colors.textSecondary, marginTop: 2 },
+  gasError: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  amountError: { fontSize: 12, color: colors.error, marginTop: 4 },
   bottomContainer: {
     position: 'absolute',
     bottom: 0,
@@ -737,18 +472,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
   },
-  sendButtonText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sendButtonDisabled: {
-    backgroundColor: colors.border,
-    opacity: 0.5,
-  },
-  sendButtonTextDisabled: {
-    color: colors.textSecondary,
-  },
+  sendButtonText: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  sendButtonDisabled: { backgroundColor: colors.border, opacity: 0.5 },
+  sendButtonTextDisabled: { color: colors.textSecondary },
   modalOverlay: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -784,36 +510,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 32,
   },
-  modalButtonText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  modalButtonText: { color: colors.text, fontSize: 16, fontWeight: '600' },
   transactionDetails: {
     backgroundColor: colors.cardDark,
     borderRadius: 8,
     padding: 12,
     marginVertical: 16,
   },
-  transactionLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  transactionId: {
-    fontSize: 14,
-    color: colors.primary,
-    fontFamily: 'monospace',
-  },
-  transactionSummary: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
+  transactionLabel: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
+  transactionId: { fontSize: 14, color: colors.primary, fontFamily: 'monospace' },
+  transactionSummary: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  summaryLabel: { fontSize: 14, color: colors.textSecondary },
   summaryValue: {
     fontSize: 14,
     color: colors.text,
@@ -836,24 +543,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
-  recapLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  recapValue: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  recapValueSecondary: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    fontWeight: '400',
-  },
-  recapDivider: {
-    height: 1,
-    backgroundColor: colors.cardDark,
-    marginVertical: 4,
-  },
+  recapLabel: { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
+  recapValue: { fontSize: 14, color: colors.text, fontWeight: '600' },
+  recapValueSecondary: { fontSize: 12, color: colors.textTertiary, fontWeight: '400' },
+  recapDivider: { height: 1, backgroundColor: colors.cardDark, marginVertical: 4 },
 });

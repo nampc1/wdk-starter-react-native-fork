@@ -1,24 +1,22 @@
 import { Network, NetworkSelector } from '@/components/NetworkSelector';
-import { assetConfig } from '@/config/assets';
-import { networkConfigs } from '@/config/networks';
+import { chainUiConfigs } from '@/config/chain';
 import formatAmount from '@/utils/format-amount';
-import { AssetTicker, useWallet } from '@tetherto/wdk-react-native-provider';
-import { useLocalSearchParams } from 'expo-router';
-import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
+import { useAggregatedBalances } from '@/hooks/use-aggregated-balances';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FiatCurrency, pricingService } from '@/services/pricing-service';
-import getDisplaySymbol from '@/utils/get-display-symbol';
 import formatTokenAmount from '@/utils/format-token-amount';
 import Header from '@/components/header';
 import { colors } from '@/constants/colors';
 
 export default function SelectNetworkScreen() {
   const insets = useSafeAreaInsets();
-  const router = useDebouncedNavigation();
+  const router = useRouter();
   const params = useLocalSearchParams();
-  const { balances } = useWallet();
+
+  const { assets } = useAggregatedBalances();
+
   const { tokenId, tokenSymbol, tokenName, scannedAddress } = params as {
     tokenId: string;
     tokenSymbol: string;
@@ -28,48 +26,43 @@ export default function SelectNetworkScreen() {
 
   const [networks, setNetworks] = useState<Network[]>([]);
 
-  // Calculate networks with balances and fiat values
   useEffect(() => {
     const calculateNetworks = async () => {
-      const tokenConfig = assetConfig[tokenId];
+      const assetData = assets.find((a) => a.symbol === tokenId);
 
-      if (!tokenConfig) {
+      if (!assetData) {
         setNetworks([]);
         return;
       }
 
-      const networksWithBalances = await Promise.all(
-        tokenConfig.supportedNetworks.map(async networkType => {
-          const network = networkConfigs[networkType];
+      const networksWithBalances = assetData.networkBalances.map((nb) => {
+        const networkKey = nb.network;
+        // Use loose typing or cast if chainUiConfigs is strictly typed to Network enum
+        const uiConfig = chainUiConfigs[networkKey] || {
+          name: networkKey,
+          icon: null,
+          color: colors.textSecondary,
+        };
 
-          const balance = balances.list?.find(
-            b => networkType === b.networkType && b.denomination === tokenId
-          );
-
-          const balanceValue = balance ? parseFloat(balance.value) : 0;
-
-          // Calculate fiat value using pricing service
-          const balanceUSD = await pricingService.getFiatValue(
-            balanceValue,
-            tokenId as AssetTicker,
-            FiatCurrency.USD
-          );
-
-          return {
-            ...network,
-            balance: formatTokenAmount(balanceValue, tokenId as AssetTicker, false),
-            balanceFiat: formatAmount(balanceUSD),
-            fiatCurrency: FiatCurrency.USD,
-            token: getDisplaySymbol(tokenId),
-          };
-        })
-      );
+        return {
+          id: networkKey,
+          name: uiConfig.name,
+          gasLevel: 'Normal', // Placeholder
+          gasColor: colors.success, // Placeholder
+          icon: uiConfig.icon,
+          color: uiConfig.color,
+          balance: formatTokenAmount(nb.balance, assetData.symbol),
+          balanceFiat: formatAmount(0), // Placeholder
+          fiatCurrency: 'USD',
+          token: assetData.symbol,
+        } as Network;
+      });
 
       setNetworks(networksWithBalances);
     };
 
     calculateNetworks();
-  }, [tokenId, balances.list]);
+  }, [tokenId, assets]);
 
   const handleSelectNetwork = useCallback(
     (network: Network) => {

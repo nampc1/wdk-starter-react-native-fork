@@ -1,4 +1,4 @@
-import { networkConfigs } from '@/config/networks';
+import { chainUiConfigs } from '@/config/chain';
 import formatAmount from '@/utils/format-amount';
 import formatTokenAmount from '@/utils/format-token-amount';
 import formatUSDValue from '@/utils/format-usd-value';
@@ -35,7 +35,7 @@ export function TokenDetails({ tokenData, onSendPress }: TokenDetailsProps) {
     if (onSendPress) {
       onSendPress(network);
     } else {
-      const networkName = network ? networkConfigs[network]?.name || network : 'any network';
+      const networkName = network ? chainUiConfigs[network]?.name || network : 'any network';
       Alert.alert('Send Token', `Send ${tokenData.symbol} on ${networkName}`);
     }
   };
@@ -67,9 +67,9 @@ export function TokenDetails({ tokenData, onSendPress }: TokenDetailsProps) {
           <Text style={styles.sectionTitle}>Available on Networks</Text>
           <ScrollView style={styles.networkList} showsVerticalScrollIndicator={false}>
             {tokenData.networkBalances.map((item, index) => {
-              const networkName = networkConfigs[item.network]?.name || item.network;
-              const networkColor = networkConfigs[item.network]?.color || '#999';
-              const networkIcon = networkConfigs[item.network]?.icon;
+              const networkName = chainUiConfigs[item.network]?.name || item.network;
+              const networkColor = chainUiConfigs[item.network]?.color || '#999';
+              const networkIcon = chainUiConfigs[item.network]?.icon;
 
               return (
                 <View key={`${item.network}-${index}`} style={styles.networkRow}>

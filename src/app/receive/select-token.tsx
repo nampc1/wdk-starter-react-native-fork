@@ -1,7 +1,5 @@
-import { assetConfig } from '@/config/assets';
-import getDisplaySymbol from '@/utils/get-display-symbol';
+import { tokenUiConfigs, default as tokenConfigs } from '@/config/token';
 import { getRecentTokens, addToRecentTokens } from '@/utils/recent-tokens';
-import { useWallet } from '@tetherto/wdk-react-native-provider';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
 import { ArrowLeft, Search, X } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -27,10 +25,19 @@ interface Token {
   color: string;
 }
 
+// Helper to find token name from tokenConfigs
+function getTokenName(symbol: string): string {
+  for (const network of Object.values(tokenConfigs)) {
+    if (network.native.symbol === symbol) return network.native.name;
+    const token = network.tokens.find((t) => t.symbol === symbol);
+    if (token) return token.name;
+  }
+  return symbol;
+}
+
 export default function ReceiveSelectTokenScreen() {
   const insets = useSafeAreaInsets();
   const router = useDebouncedNavigation();
-  const { wallet } = useWallet();
   const [searchQuery, setSearchQuery] = useState('');
   const [recentTokens, setRecentTokens] = useState<string[]>([]);
 
@@ -44,31 +51,29 @@ export default function ReceiveSelectTokenScreen() {
 
   // Create token list from enabled assets
   const tokens: Token[] = useMemo(() => {
-    if (!wallet?.enabledAssets) {
-      return [];
-    }
+    const allSymbols = Object.keys(tokenUiConfigs);
 
-    return wallet.enabledAssets
-      .map(assetSymbol => {
-        const config = assetConfig[assetSymbol as keyof typeof assetConfig];
-        if (!config) return null;
+    return allSymbols.map((assetSymbol) => {
+      const uiConfig = tokenUiConfigs[assetSymbol] || {
+        icon: null,
+        color: colors.primary,
+      };
 
-        return {
-          id: assetSymbol,
-          symbol: getDisplaySymbol(assetSymbol),
-          name: config.name,
-          icon: config.icon,
-          color: config.color,
-        };
-      })
-      .filter(Boolean) as Token[];
-  }, [wallet?.enabledAssets]);
+      return {
+        id: assetSymbol,
+        symbol: assetSymbol,
+        name: getTokenName(assetSymbol),
+        icon: uiConfig.icon,
+        color: uiConfig.color,
+      };
+    });
+  }, []);
 
   const filteredTokens = useMemo(() => {
     if (!searchQuery) return tokens;
     const query = searchQuery.toLowerCase();
     return tokens.filter(
-      token =>
+      (token) =>
         token.name.toLowerCase().includes(query) || token.symbol.toLowerCase().includes(query)
     );
   }, [searchQuery, tokens]);
@@ -100,7 +105,7 @@ export default function ReceiveSelectTokenScreen() {
   }, []);
 
   const renderRecentToken = (tokenName: string) => {
-    const token = tokens.find(t => t.name === tokenName);
+    const token = tokens.find((t) => t.name === tokenName);
     if (!token) return null;
 
     return (
@@ -111,7 +116,11 @@ export default function ReceiveSelectTokenScreen() {
         activeOpacity={0.7}
       >
         <View style={[styles.recentTokenIcon, { backgroundColor: token.color }]}>
-          <Image source={token.icon} style={styles.recentTokenIconImage} />
+          {token.icon ? (
+            <Image source={token.icon} style={styles.recentTokenIconImage} />
+          ) : (
+            <Text style={{ color: 'white', fontWeight: 'bold' }}>{token.symbol[0]}</Text>
+          )}
         </View>
         <Text style={styles.recentTokenName}>{token.name}</Text>
       </TouchableOpacity>
@@ -127,7 +136,13 @@ export default function ReceiveSelectTokenScreen() {
       >
         <View style={styles.tokenInfo}>
           <View style={[styles.tokenIcon, { backgroundColor: item.color }]}>
-            <Image source={item.icon} style={styles.tokenIconImage} />
+            {item.icon ? (
+              <Image source={item.icon} style={styles.tokenIconImage} />
+            ) : (
+              <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+                {item.symbol[0]}
+              </Text>
+            )}
           </View>
           <View>
             <Text style={styles.tokenName}>{item.name}</Text>
@@ -186,7 +201,7 @@ export default function ReceiveSelectTokenScreen() {
           <FlatList
             data={filteredTokens}
             renderItem={renderToken}
-            keyExtractor={item => item.id}
+            keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.tokensList}
           />

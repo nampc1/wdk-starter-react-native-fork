@@ -1,11 +1,7 @@
-import { AssetTicker } from '@tetherto/wdk-react-native-provider';
 import formatAmount from './format-amount';
-import getDisplaySymbol from './get-display-symbol';
 
-const formatTokenAmount = (amount: number, token: AssetTicker, includeSymbol: boolean = true) => {
-  const symbol = getDisplaySymbol(token);
-
-  if (amount === 0) return `0.00${includeSymbol ? ` ${symbol}` : ''}`;
+const formatTokenAmount = (amount: number, symbol?: string) => {
+  if (amount === 0) return `0.00${symbol ? ` ${symbol}` : ''}`;
 
   let decimals = Math.max(Math.ceil(Math.abs(Math.log10(amount))), 2);
 
@@ -14,7 +10,7 @@ const formatTokenAmount = (amount: number, token: AssetTicker, includeSymbol: bo
     maximumFractionDigits: decimals,
   });
 
-  return `${formattedAmount}${includeSymbol ? ` ${symbol}` : ''}`;
+  return `${formattedAmount}${symbol ? ` ${symbol}` : ''}`;
 };
 
 export default formatTokenAmount;
