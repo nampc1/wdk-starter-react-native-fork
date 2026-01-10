@@ -73,7 +73,7 @@ const chainConfigs: NetworkConfigs = {
   [Network.ETHEREUM]: {
     chainId: 1, // Sepolia
     blockchain: 'Ethereum',
-    provider: 'https://eth.llamarpc.com',
+    provider: 'https://ethereum-sepolia-rpc.publicnode.com',
   },
   // [Network.BITCOIN]: {
   //   host: 'electrum.blockstream.info',

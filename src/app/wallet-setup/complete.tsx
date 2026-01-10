@@ -31,7 +31,6 @@ export default function CompleteScreen() {
       if (!mnemonic) throw new Error('Invalid mnemonic provided');
 
       await initializeFromMnemonic(mnemonic, walletName);
-
       setWalletCreated(true);
     } catch (error: any) {
       console.error('Failed to create wallet:', error);

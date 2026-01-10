@@ -1,6 +1,6 @@
 import { BalanceLoader } from '@/components/BalanceLoader';
 import { useAggregatedBalances } from '@/hooks/use-aggregated-balances';
-import { useWdkApp } from '@tetherto/wdk-react-native-core';
+import { useWallet, useWdkApp } from '@tetherto/wdk-react-native-core';
 import { Balance } from '@tetherto/wdk-uikit-react-native';
 import { useDebouncedNavigation } from '@/hooks/use-debounced-navigation';
 import {

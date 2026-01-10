@@ -7,10 +7,7 @@ export default function Index() {
   const { workletState, walletState, activeWalletId, walletExists, isReady } = useWdkApp();
 
   const isLoading =
-    workletState.isLoading ||
-    walletExists === null ||
-    walletState.status === 'checking' ||
-    walletState.status === 'loading';
+    workletState.isLoading || walletState.status === 'checking' || walletState.status === 'loading';
 
   if (isLoading) {
     return (
@@ -27,7 +24,7 @@ export default function Index() {
     );
   }
 
-  if (isReady && activeWalletId) {
+  if (activeWalletId) {
     return <Redirect href="/wallet" />;
   }
 
